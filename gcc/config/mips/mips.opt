@@ -218,6 +218,14 @@ mfix4300
 Target Var(TARGET_4300_MUL_FIX)
 Work around VR4300 floating point multiply errata.
 
+mclear-stack-dcache=
+Target RejectNegative Joined UInteger Var(mips_stack_dcache_line_size_arg)
+Flush stack memory using cache instructions in function prologues/epilogues with the given cache line size, as a power of two.
+
+mdcache-size=
+Target RejectNegative Joined UInteger Var(mips_dcache_size_arg)
+Sets the maximum cache size as a power of two for flushing stack memory with -mclear-stack-dcache.
+
 mfp-exceptions
 Target Var(TARGET_FP_EXCEPTIONS) Init(1)
 FP exceptions are enabled.

@@ -501,6 +501,9 @@ unsigned int mips_base_compression_flags;
 /* Stack alignment to assume/maintain.  */
 unsigned mips_stack_boundary;
 
+static unsigned mips_stack_dcache_line_size = 0;
+static unsigned mips_dcache_size = 0;
+
 /* The default code readable setting.  */
 enum mips_code_readable_setting mips_base_code_readable;
 
@@ -12581,6 +12584,47 @@ mips_refers_to_kernel_reg_p (const_rtx x)
   return false;
 }
 
+static void
+mips_emit_4300_stack_cache_op (HOST_WIDE_INT size, long op, unsigned tmpreg)
+{
+  HOST_WIDE_INT linesize;
+
+  if (!ISA_HAS_CACHE || !mips_stack_dcache_line_size)
+    return;
+
+  linesize = mips_stack_dcache_line_size;
+  if (size < linesize)
+    return;
+
+  op = (op << 2) | 1;
+
+  if (size <= linesize * 4)
+    {
+      for (long offset = linesize; offset <= size; offset += linesize)
+	emit_insn (gen_mips_cache (GEN_INT (op), plus_constant (Pmode, stack_pointer_rtx,
+								-offset)));
+    }
+  else
+    {
+      rtx tr, tmp;
+      rtx_code_label *label;
+
+      size = size & ~(linesize - 1);
+      if (mips_dcache_size)
+	size = MIN (size, (HOST_WIDE_INT) mips_dcache_size);
+
+      tr = gen_rtx_REG (Pmode, tmpreg);
+      emit_insn (gen_add3_insn (tr, stack_pointer_rtx, GEN_INT (-size)));
+      label = gen_label_rtx ();
+      emit_label (label);
+      emit_insn (gen_add3_insn (tr, tr, GEN_INT (linesize)));
+      emit_insn (gen_mips_cache (GEN_INT (op), plus_constant (Pmode, tr, -linesize)));
+      tmp = gen_rtx_NE (Pmode, tr, stack_pointer_rtx);
+      tmp = emit_jump_insn (gen_condjump (tmp, label));
+      JUMP_LABEL (tmp) = label;
+    }
+}
+
 /* Expand the "prologue" pattern.  */
 
 void
@@ -12623,6 +12667,8 @@ mips_expand_prologue (void)
       else if (size > 0)
 	mips_emit_probe_stack_range (get_stack_check_protect (), size);
     }
+
+  mips_emit_4300_stack_cache_op (size, 3, AT_REGNUM);
 
   /* Save the registers.  Allocate up to MIPS_MAX_FIRST_STACK_STEP
      bytes beforehand; this is enough to cover the register save area
@@ -13182,6 +13228,8 @@ mips_expand_epilogue (bool sibcall_p)
 				  stack_pointer_rtx,
 				  EH_RETURN_STACKADJ_RTX));
     }
+
+  mips_emit_4300_stack_cache_op (frame->total_size, 4, AT_REGNUM);
 
   if (!sibcall_p)
     {
@@ -20565,6 +20613,21 @@ mips_option_override (void)
 
       mips_stack_boundary = 8 << mips_preferred_stack_boundary_arg;
     }
+
+  if (mips_stack_dcache_line_size_arg)
+  {
+      if (!IN_RANGE (mips_stack_dcache_line_size_arg, 1, 8))
+	error ("%<-mclear-stack-dcache=%d%> must be between 1 and 8",
+	       mips_stack_dcache_line_size_arg);
+      mips_stack_dcache_line_size = 1 << mips_stack_dcache_line_size_arg;
+  }
+  if (mips_dcache_size_arg)
+  {
+      if (!IN_RANGE (mips_dcache_size_arg, 1, 31))
+	error ("%<-mdcache-size=%d%> must be between 1 and 31",
+	       mips_dcache_size_arg);
+      mips_dcache_size = 1 << mips_dcache_size_arg;
+  }
 
   /* -fsanitize=address needs to turn on -fasynchronous-unwind-tables in
      order for tracebacks to be complete but not if any
