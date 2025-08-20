@@ -92,6 +92,8 @@
   UNSPEC_STORE_WORD
   UNSPEC_MFHC1
   UNSPEC_MTHC1
+  UNSPEC_DFSI_CLIP
+  UNSPEC_SFSI_CLIP
 
   ;; Floating-point environment.
   UNSPEC_GET_FCSR
@@ -4089,10 +4091,32 @@
    (set_attr "cnv_mode"	"D2I")])
 
 
+(define_insn "fix_truncdfdi2_trunc"
+  [(set (match_operand:SI 0 "register_operand" "=f")
+	(unspec:SI [(match_operand:DF 1 "register_operand" "f")]
+		   UNSPEC_DFSI_CLIP))]
+  "TARGET_HARD_FLOAT && TARGET_FLOAT64 && TARGET_DOUBLE_FLOAT && TARGET_64BIT"
+  "trunc.l.d %0,%1"
+  [(set_attr "type"	"fcvt")
+   (set_attr "mode"	"DF")
+   (set_attr "cnv_mode"	"D2I")])
+
+
 (define_insn "fix_truncsfdi2"
   [(set (match_operand:DI 0 "register_operand" "=f")
 	(fix:DI (match_operand:SF 1 "register_operand" "f")))]
   "TARGET_HARD_FLOAT && TARGET_FLOAT64 && TARGET_DOUBLE_FLOAT"
+  "trunc.l.s %0,%1"
+  [(set_attr "type"	"fcvt")
+   (set_attr "mode"	"SF")
+   (set_attr "cnv_mode"	"S2I")])
+
+
+(define_insn "fix_truncsfdi2_trunc"
+  [(set (match_operand:SI 0 "register_operand" "=f")
+	(unspec:SI [(match_operand:SF 1 "register_operand" "f")]
+		   UNSPEC_SFSI_CLIP))]
+  "TARGET_HARD_FLOAT && TARGET_FLOAT64 && TARGET_DOUBLE_FLOAT && TARGET_64BIT"
   "trunc.l.s %0,%1"
   [(set_attr "type"	"fcvt")
    (set_attr "mode"	"SF")
@@ -4138,49 +4162,56 @@
    (set_attr "mode"	"SF")
    (set_attr "cnv_mode"	"I2S")])
 
-
 (define_expand "fixuns_truncdfsi2"
   [(set (match_operand:SI 0 "register_operand")
 	(unsigned_fix:SI (match_operand:DF 1 "register_operand")))]
   "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT"
 {
-  rtx reg1 = gen_reg_rtx (DFmode);
-  rtx reg2 = gen_reg_rtx (DFmode);
-  rtx reg3 = gen_reg_rtx (SImode);
-  rtx_code_label *label1 = gen_label_rtx ();
-  rtx_code_label *label2 = gen_label_rtx ();
-  rtx test;
-  REAL_VALUE_TYPE offset;
-
-  real_2expN (&offset, 31, DFmode);
-
-  if (reg1)			/* Turn off complaints about unreached code.  */
+  if (TARGET_FLOAT64 && TARGET_64BIT)
     {
-      mips_emit_move (reg1, const_double_from_real_value (offset, DFmode));
-      do_pending_stack_adjust ();
-
-      test = gen_rtx_GE (VOIDmode, operands[1], reg1);
-      emit_jump_insn (gen_cbranchdf4 (test, operands[1], reg1, label1));
-
-      emit_insn (gen_fix_truncdfsi2 (operands[0], operands[1]));
-      emit_jump_insn (gen_rtx_SET (pc_rtx,
-                                   gen_rtx_LABEL_REF (VOIDmode, label2)));
-      emit_barrier ();
-
-      emit_label (label1);
-      mips_emit_move (reg2, gen_rtx_MINUS (DFmode, operands[1], reg1));
-      mips_emit_move (reg3, GEN_INT (trunc_int_for_mode
-				     (BITMASK_HIGH, SImode)));
-
-      emit_insn (gen_fix_truncdfsi2 (operands[0], reg2));
-      emit_insn (gen_iorsi3 (operands[0], operands[0], reg3));
-
-      emit_label (label2);
-
-      /* Allow REG_NOTES to be set on last insn (labels don't have enough
-	 fields, and can't be used for REG_NOTES anyway).  */
-      emit_use (stack_pointer_rtx);
+      emit_insn (gen_fix_truncdfdi2_trunc (operands[0], operands[1]));
       DONE;
+    }
+  else
+    {
+      rtx reg1 = gen_reg_rtx (DFmode);
+      rtx reg2 = gen_reg_rtx (DFmode);
+      rtx reg3 = gen_reg_rtx (SImode);
+      rtx_code_label *label1 = gen_label_rtx ();
+      rtx_code_label *label2 = gen_label_rtx ();
+      rtx test;
+      REAL_VALUE_TYPE offset;
+
+      real_2expN (&offset, 31, DFmode);
+
+      if (reg1)			/* Turn off complaints about unreached code.  */
+	{
+	  mips_emit_move (reg1, const_double_from_real_value (offset, DFmode));
+	  do_pending_stack_adjust ();
+
+	  test = gen_rtx_GE (VOIDmode, operands[1], reg1);
+	  emit_jump_insn (gen_cbranchdf4 (test, operands[1], reg1, label1));
+
+	  emit_insn (gen_fix_truncdfsi2 (operands[0], operands[1]));
+	  emit_jump_insn (gen_rtx_SET (pc_rtx,
+				       gen_rtx_LABEL_REF (VOIDmode, label2)));
+	  emit_barrier ();
+
+	  emit_label (label1);
+	  mips_emit_move (reg2, gen_rtx_MINUS (DFmode, operands[1], reg1));
+	  mips_emit_move (reg3, GEN_INT (trunc_int_for_mode
+					 (BITMASK_HIGH, SImode)));
+
+	  emit_insn (gen_fix_truncdfsi2 (operands[0], reg2));
+	  emit_insn (gen_iorsi3 (operands[0], operands[0], reg3));
+
+	  emit_label (label2);
+
+	  /* Allow REG_NOTES to be set on last insn (labels don't have enough
+	     fields, and can't be used for REG_NOTES anyway).  */
+	  emit_use (stack_pointer_rtx);
+	  DONE;
+	}
     }
 })
 
@@ -4232,40 +4263,48 @@
 	(unsigned_fix:SI (match_operand:SF 1 "register_operand")))]
   "TARGET_HARD_FLOAT"
 {
-  rtx reg1 = gen_reg_rtx (SFmode);
-  rtx reg2 = gen_reg_rtx (SFmode);
-  rtx reg3 = gen_reg_rtx (SImode);
-  rtx_code_label *label1 = gen_label_rtx ();
-  rtx_code_label *label2 = gen_label_rtx ();
-  rtx test;
-  REAL_VALUE_TYPE offset;
+  if (TARGET_FLOAT64 && TARGET_64BIT)
+    {
+      emit_insn (gen_fix_truncsfdi2_trunc (operands[0], operands[1]));
+      DONE;
+    }
+  else
+    {
+      rtx reg1 = gen_reg_rtx (SFmode);
+      rtx reg2 = gen_reg_rtx (SFmode);
+      rtx reg3 = gen_reg_rtx (SImode);
+      rtx_code_label *label1 = gen_label_rtx ();
+      rtx_code_label *label2 = gen_label_rtx ();
+      rtx test;
+      REAL_VALUE_TYPE offset;
 
-  real_2expN (&offset, 31, SFmode);
+      real_2expN (&offset, 31, SFmode);
 
-  mips_emit_move (reg1, const_double_from_real_value (offset, SFmode));
-  do_pending_stack_adjust ();
+      mips_emit_move (reg1, const_double_from_real_value (offset, SFmode));
+      do_pending_stack_adjust ();
 
-  test = gen_rtx_GE (VOIDmode, operands[1], reg1);
-  emit_jump_insn (gen_cbranchsf4 (test, operands[1], reg1, label1));
+      test = gen_rtx_GE (VOIDmode, operands[1], reg1);
+      emit_jump_insn (gen_cbranchsf4 (test, operands[1], reg1, label1));
 
-  emit_insn (gen_fix_truncsfsi2 (operands[0], operands[1]));
-  emit_jump_insn (gen_rtx_SET (pc_rtx, gen_rtx_LABEL_REF (VOIDmode, label2)));
-  emit_barrier ();
+      emit_insn (gen_fix_truncsfsi2 (operands[0], operands[1]));
+      emit_jump_insn (gen_rtx_SET (pc_rtx, gen_rtx_LABEL_REF (VOIDmode, label2)));
+      emit_barrier ();
 
-  emit_label (label1);
-  mips_emit_move (reg2, gen_rtx_MINUS (SFmode, operands[1], reg1));
-  mips_emit_move (reg3, GEN_INT (trunc_int_for_mode
-				 (BITMASK_HIGH, SImode)));
+      emit_label (label1);
+      mips_emit_move (reg2, gen_rtx_MINUS (SFmode, operands[1], reg1));
+      mips_emit_move (reg3, GEN_INT (trunc_int_for_mode
+				     (BITMASK_HIGH, SImode)));
 
-  emit_insn (gen_fix_truncsfsi2 (operands[0], reg2));
-  emit_insn (gen_iorsi3 (operands[0], operands[0], reg3));
+      emit_insn (gen_fix_truncsfsi2 (operands[0], reg2));
+      emit_insn (gen_iorsi3 (operands[0], operands[0], reg3));
 
-  emit_label (label2);
+      emit_label (label2);
 
-  /* Allow REG_NOTES to be set on last insn (labels don't have enough
-     fields, and can't be used for REG_NOTES anyway).  */
-  emit_use (stack_pointer_rtx);
-  DONE;
+      /* Allow REG_NOTES to be set on last insn (labels don't have enough
+	 fields, and can't be used for REG_NOTES anyway).  */
+      emit_use (stack_pointer_rtx);
+      DONE;
+    }
 })
 
 
