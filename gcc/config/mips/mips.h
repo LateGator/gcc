@@ -301,6 +301,7 @@ struct mips_cpu_info {
 #define TARGET_MIPS4000             (mips_arch == PROCESSOR_R4000)
 #define TARGET_MIPS4120             (mips_arch == PROCESSOR_R4120)
 #define TARGET_MIPS4130             (mips_arch == PROCESSOR_R4130)
+#define TARGET_MIPS4300             (mips_arch == PROCESSOR_R4300)
 #define TARGET_MIPS5400             (mips_arch == PROCESSOR_R5400)
 #define TARGET_MIPS5500             (mips_arch == PROCESSOR_R5500)
 #define TARGET_MIPS5900             (mips_arch == PROCESSOR_R5900)
@@ -1330,11 +1331,13 @@ struct mips_cpu_info {
 
 /* Likewise mtc1 and mfc1.  */
 #define ISA_HAS_XFER_DELAY	(mips_isa <= MIPS_ISA_MIPS3	\
+				 && !TARGET_MIPS4300		\
 				 && !TARGET_MIPS5900		\
 				 && !TARGET_LOONGSON_2EF)
 
 /* Likewise floating-point comparisons.  */
 #define ISA_HAS_FCMP_DELAY	(mips_isa <= MIPS_ISA_MIPS3	\
+				 && !TARGET_MIPS4300		\
 				 && !TARGET_MIPS5900		\
 				 && !TARGET_LOONGSON_2EF)
 
@@ -1472,6 +1475,7 @@ struct mips_cpu_info {
 %{mfix-r5900} %{mno-fix-r5900} \
 %{mfix-rm7000} %{mno-fix-rm7000} \
 %{mfix-vr4120} %{mfix-vr4130} \
+%{mfix4300} %{mno-fix4300} \
 %{mfix-24k} \
 %{noasmopt:-O0; O0|fno-delayed-branch:-O1; O*:-O2; :-O1} \
 %(subtarget_asm_debugging_spec) \

@@ -212,7 +212,7 @@ Work around VR4130 mflo/mfhi errata.
 
 mfix4300
 Target Var(TARGET_4300_MUL_FIX)
-Work around an early 4300 hardware bug.
+Work around VR4300 floating point multiply errata.
 
 mfp-exceptions
 Target Var(TARGET_FP_EXCEPTIONS) Init(1)

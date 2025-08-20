@@ -14137,6 +14137,7 @@ mips_adjust_insn_length (rtx_insn *insn, int length)
 
       case HAZARD_DELAY:
       case HAZARD_FORBIDDEN_SLOT:
+      case HAZARD_MUL:
 	length += NOP_INSN_LENGTH;
 	break;
 
@@ -19334,6 +19335,32 @@ mips_classify_branch_p6600 (rtx_insn *insn)
   return UC_UNDEFINED;
 }
 
+/* Subroutine of mips_reorg_process_insns.  Early revisions of the VR4300 have
+   an issue where a floating point multiply may corrupt the result of a
+   following integer or floating point multiply if one or more of the operands
+   is infinity, 0, or sNaN.
+   
+   This can also happen if the instruction is in a delay slot and the jump target
+   is a multiply instruction, so this detects both a multiply or a branch slot. */
+
+static bool
+mips_needs_nop_after_fmul (rtx_insn *insn)
+{
+  if (!insn)
+    return false;
+
+  if (!TARGET_4300_MUL_FIX)
+    return false;
+
+  if (!INSN_P (insn) || recog_memoized (insn) < 0)
+    return false;
+
+  return (JUMP_P (insn) && INSN_ANNULLED_BRANCH_P (insn))          /* branch with unfilled delay slot */
+	 || get_attr_type (insn) == TYPE_FMUL   /* MUL.S, MUL.D */
+	 || get_attr_type (insn) == TYPE_IMUL;  /* MULT, MULTU */
+}
+
+
 /* Subroutine of mips_reorg_process_insns.  If there is a hazard between
    INSN and a previous instruction, avoid it by inserting nops after
    instruction AFTER.
@@ -19351,7 +19378,7 @@ mips_classify_branch_p6600 (rtx_insn *insn)
 
 static void
 mips_avoid_hazard (rtx_insn *after, rtx_insn *insn, int *hilo_delay,
-		   rtx *delayed_reg, rtx lo_reg, bool *fs_delay)
+		   rtx *delayed_reg, rtx lo_reg, bool *fs_delay, bool *fmul_delay)
 {
   rtx pattern, set;
   int nops, ninsns;
@@ -19401,6 +19428,8 @@ mips_avoid_hazard (rtx_insn *after, rtx_insn *insn, int *hilo_delay,
 	       || (mips_classify_branch_p6600 (insn) == UC_BALC
 		   && mips_classify_branch_p6600 (after) == UC_OTHER)))
     nops = 1;
+  else if (*fmul_delay && mips_needs_nop_after_fmul (insn))
+    nops = 1;
   else
     nops = 0;
 
@@ -19425,6 +19454,7 @@ mips_avoid_hazard (rtx_insn *after, rtx_insn *insn, int *hilo_delay,
   *hilo_delay += ninsns;
   *delayed_reg = 0;
   *fs_delay = false;
+  *fmul_delay = false;
   if (INSN_CODE (insn) >= 0)
     switch (get_attr_hazard (insn))
       {
@@ -19453,6 +19483,10 @@ mips_avoid_hazard (rtx_insn *after, rtx_insn *insn, int *hilo_delay,
 	set = single_set (insn);
 	gcc_assert (set);
 	*delayed_reg = SET_DEST (set);
+	break;
+
+      case HAZARD_MUL:
+	*fmul_delay = true;
 	break;
       }
 }
@@ -19505,6 +19539,7 @@ mips_reorg_process_insns (void)
   rtx lo_reg, delayed_reg;
   int hilo_delay;
   bool fs_delay;
+  bool fmul_delay;
 
   /* Force all instructions to be split into their final form.  */
   split_all_insns_noflow ();
@@ -19574,6 +19609,7 @@ mips_reorg_process_insns (void)
   delayed_reg = 0;
   lo_reg = gen_rtx_REG (SImode, LO_REGNUM);
   fs_delay = false;
+  fmul_delay = false;
 
   /* Make a second pass over the instructions.  Delete orphaned
      high-part relocations or turn them into NOPs.  Avoid hazards
@@ -19658,7 +19694,7 @@ mips_reorg_process_insns (void)
 			INSN_CODE (subinsn) = CODE_FOR_nop;
 		      }
 		    mips_avoid_hazard (last_insn, subinsn, &hilo_delay,
-				       &delayed_reg, lo_reg, &fs_delay);
+				       &delayed_reg, lo_reg, &fs_delay, &fmul_delay);
 		  }
 	      last_insn = insn;
 	    }
@@ -19679,7 +19715,7 @@ mips_reorg_process_insns (void)
 	      else
 		{
 		  mips_avoid_hazard (last_insn, insn, &hilo_delay,
-				     &delayed_reg, lo_reg, &fs_delay);
+				     &delayed_reg, lo_reg, &fs_delay, &fmul_delay);
 		  /* When a compact branch introduces a forbidden slot hazard
 		     and the next useful instruction is a SEQUENCE of a jump
 		     and a non-nop instruction in the delay slot, remove the

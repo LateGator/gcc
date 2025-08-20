@@ -757,7 +757,7 @@
 ;; DELAY means that the next instruction cannot read the result
 ;; of this one.  HILO means that the next two instructions cannot
 ;; write to HI or LO.
-(define_attr "hazard" "none,delay,hilo,forbidden_slot"
+(define_attr "hazard" "none,delay,hilo,forbidden_slot,mul"
   (cond [(and (eq_attr "type" "load,fpload,fpidxload")
 	      (match_test "ISA_HAS_LOAD_DELAY"))
 	 (const_string "delay")
@@ -777,8 +777,12 @@
 
 	 (and (eq_attr "type" "mfhi,mflo")
 	      (not (match_test "ISA_HAS_HILO_INTERLOCKS")))
-	 (const_string "hilo")]
-	(const_string "none")))
+	 (const_string "hilo")
+   
+	 (and (eq_attr "type" "fmul")
+	      (match_test "TARGET_4300_MUL_FIX"))
+	 (const_string "mul")]
+    (const_string "none")))
 
 ;; Can the instruction be put into a delay slot?
 (define_attr "can_delay" "no,yes"
@@ -1551,24 +1555,10 @@
   [(set (match_operand:SCALARF 0 "register_operand" "=f")
 	(mult:SCALARF (match_operand:SCALARF 1 "register_operand" "f")
 		      (match_operand:SCALARF 2 "register_operand" "f")))]
-  "!TARGET_4300_MUL_FIX"
+  ""
   "mul.<fmt>\t%0,%1,%2"
   [(set_attr "type" "fmul")
    (set_attr "mode" "<MODE>")])
-
-;; Early VR4300 silicon has a CPU bug where multiplies with certain
-;; operands may corrupt immediately following multiplies. This is a
-;; simple fix to insert NOPs.
-
-(define_insn "*mul<mode>3_r4300"
-  [(set (match_operand:SCALARF 0 "register_operand" "=f")
-	(mult:SCALARF (match_operand:SCALARF 1 "register_operand" "f")
-		      (match_operand:SCALARF 2 "register_operand" "f")))]
-  "TARGET_4300_MUL_FIX"
-  "mul.<fmt>\t%0,%1,%2\;nop"
-  [(set_attr "type" "fmul")
-   (set_attr "mode" "<MODE>")
-   (set_attr "insn_count" "2")])
 
 (define_insn "mulv2sf3"
   [(set (match_operand:V2SF 0 "register_operand" "=f")
