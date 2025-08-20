@@ -612,6 +612,7 @@ const enum reg_class mips_regno_to_class[FIRST_PSEUDO_REGISTER] = {
 };
 
 static tree mips_handle_code_readable_attr (tree *, tree, tree, int, bool *);
+static tree mips_handle_naked_attribute (tree *, tree, tree, int, bool *);
 static tree mips_handle_interrupt_attr (tree *, tree, tree, int, bool *);
 static tree mips_handle_use_shadow_register_set_attr (tree *, tree, tree, int,
 						      bool *);
@@ -635,6 +636,8 @@ TARGET_GNU_ATTRIBUTES (mips_attribute_table, {
   { "nocompression", 0, 0, true,  false, false, false, NULL, NULL },
   { "code_readable", 0, 1, true,  false, false, false,
     mips_handle_code_readable_attr, NULL },
+  { "naked",     0, 0, false, true,  true,  false,
+    mips_handle_naked_attribute, NULL },
   /* Allow functions to be specified as interrupt handlers */
   { "interrupt",   0, 1, false, true,  true, false, mips_handle_interrupt_attr,
     NULL },
@@ -1215,6 +1218,22 @@ mflip_mips16_use_mips16_p (tree decl)
   return *slot;
 }
 
+static inline bool
+mips_lookup_function_attribute1 (const_tree func, const char *name)
+{
+  if (FUNCTION_DECL == TREE_CODE (func))
+    {
+      if (NULL_TREE != lookup_attribute (name, DECL_ATTRIBUTES (func)))
+        return true;
+
+      func = TREE_TYPE (func);
+    }
+
+  gcc_assert (FUNC_OR_METHOD_TYPE_P (func));
+
+  return NULL_TREE != lookup_attribute (name, TYPE_ATTRIBUTES (func));
+}
+
 /* Predicates to test for presence of "near"/"short_call" and "far"/"long_call"
    attributes on the given TYPE.  */
 
@@ -1232,6 +1251,11 @@ mips_far_type_p (const_tree type)
 	  || lookup_attribute ("far", TYPE_ATTRIBUTES (type)) != NULL);
 }
 
+static bool
+mips_naked_type_p (const_tree type)
+{
+  return mips_lookup_function_attribute1 (type, "naked");
+}
 
 /* Check if the interrupt attribute is set for a function.  */
 
@@ -1350,6 +1374,20 @@ mips_handle_code_readable_attr (tree *node ATTRIBUTE_UNUSED, tree name,
   return NULL_TREE;
 }
 
+static tree
+mips_handle_naked_attribute (tree *node, tree name, tree /*args*/,
+			     int /*flags*/, bool *no_add_attrs)
+{
+  if (TREE_CODE (*node) != FUNCTION_TYPE)
+    {
+      warning (OPT_Wattributes, "%qE attribute only applies to functions",
+	       name);
+      *no_add_attrs = true;
+    }
+
+  return NULL_TREE;
+}
+
 /* Determine the code_readable setting for a function if it has one.  Set
    *valid to true if we have a properly formed argument and
    return the result.  If there's no argument, return GCC's default.
@@ -1394,7 +1432,6 @@ mips_get_code_readable_attr (tree decl)
 
   return mips_base_code_readable;
 }
-
 
 /* Return the set of compression modes that are explicitly required
    by the attributes in ATTRIBUTES.  */
@@ -8324,10 +8361,21 @@ mips_call_may_need_jalx_p (tree decl)
   return false;
 }
 
+static bool
+mips_cannot_modify_jumps_p (void)
+{
+  /* Naked Functions must not have any instructions after
+     their epilogue, see PR42240 */
+
+  return (reload_completed
+    && cfun->machine
+    && cfun->machine->is_naked);
+}
+
 /* Implement TARGET_FUNCTION_OK_FOR_SIBCALL.  */
 
 static bool
-mips_function_ok_for_sibcall (tree decl, tree exp ATTRIBUTE_UNUSED)
+mips_function_ok_for_sibcall (tree decl, tree exp)
 {
   if (!TARGET_SIBCALLS)
     return false;
@@ -8352,6 +8400,23 @@ mips_function_ok_for_sibcall (tree decl, tree exp ATTRIBUTE_UNUSED)
       && !TARGET_ABICALLS_PIC0
       && !targetm.binds_local_p (decl))
     return false;
+
+  tree fntype_callee = TREE_TYPE (CALL_EXPR_FN (exp));
+
+  if (decl)
+    {
+      decl = TREE_TYPE (decl);
+    }
+  else
+    {
+      decl = fntype_callee;
+
+      while (FUNCTION_TYPE != TREE_CODE (decl)
+	&& METHOD_TYPE != TREE_CODE (decl))
+      {
+	decl = TREE_TYPE (decl);
+      }
+    }
 
   /* Otherwise OK.  */
   return true;
@@ -11525,97 +11590,100 @@ mips_compute_frame_info (void)
   frame->var_size = MIPS_STACK_ALIGN (size);
   offset += frame->var_size;
 
-  /* Find out which GPRs we need to save.  */
-  for (regno = GP_REG_FIRST; regno <= GP_REG_LAST; regno++)
-    if (mips_save_reg_p (regno))
-      {
-	frame->num_gp++;
-	frame->mask |= 1 << (regno - GP_REG_FIRST);
-      }
-
-  /* If this function calls eh_return, we must also save and restore the
-     EH data registers.  */
-  if (crtl->calls_eh_return)
-    for (i = 0; EH_RETURN_DATA_REGNO (i) != INVALID_REGNUM; i++)
-      {
-	frame->num_gp++;
-	frame->mask |= 1 << (EH_RETURN_DATA_REGNO (i) - GP_REG_FIRST);
-      }
-
-  /* The MIPS16e SAVE and RESTORE instructions have two ranges of registers:
-     $a3-$a0 and $s2-$s8.  If we save one register in the range, we must
-     save all later registers too.  */
-  if (GENERATE_MIPS16E_SAVE_RESTORE)
+  if (!cfun->machine->is_naked)
     {
-      mips16e_mask_registers (&frame->mask, mips16e_s2_s8_regs,
- 			      ARRAY_SIZE (mips16e_s2_s8_regs), &frame->num_gp);
-      mips16e_mask_registers (&frame->mask, mips16e_a0_a3_regs,
- 			      ARRAY_SIZE (mips16e_a0_a3_regs), &frame->num_gp);
-    }
+      /* Find out which GPRs we need to save.  */
+      for (regno = GP_REG_FIRST; regno <= GP_REG_LAST; regno++)
+        if (mips_save_reg_p (regno))
+          {
+            frame->num_gp++;
+            frame->mask |= 1 << (regno - GP_REG_FIRST);
+          }
 
-  /* Move above the GPR save area.  */
-  if (frame->num_gp > 0)
-    {
-      offset += MIPS_STACK_ALIGN (frame->num_gp * UNITS_PER_WORD);
-      frame->gp_sp_offset = offset - UNITS_PER_WORD;
-    }
+      /* If this function calls eh_return, we must also save and restore the
+         EH data registers.  */
+      if (crtl->calls_eh_return)
+        for (i = 0; EH_RETURN_DATA_REGNO (i) != INVALID_REGNUM; i++)
+          {
+            frame->num_gp++;
+            frame->mask |= 1 << (EH_RETURN_DATA_REGNO (i) - GP_REG_FIRST);
+          }
 
-  /* Find out which FPRs we need to save.  This loop must iterate over
-     the same space as its companion in mips_for_each_saved_gpr_and_fpr.  */
-  if (TARGET_HARD_FLOAT)
-    for (regno = FP_REG_FIRST; regno <= FP_REG_LAST; regno += MAX_FPRS_PER_FMT)
-      if (mips_save_reg_p (regno))
-	{
-	  frame->num_fp += MAX_FPRS_PER_FMT;
-	  frame->fmask |= ~(~0U << MAX_FPRS_PER_FMT) << (regno - FP_REG_FIRST);
-	}
+      /* The MIPS16e SAVE and RESTORE instructions have two ranges of registers:
+         $a3-$a0 and $s2-$s8.  If we save one register in the range, we must
+         save all later registers too.  */
+      if (GENERATE_MIPS16E_SAVE_RESTORE)
+        {
+          mips16e_mask_registers (&frame->mask, mips16e_s2_s8_regs,
+                                  ARRAY_SIZE (mips16e_s2_s8_regs), &frame->num_gp);
+          mips16e_mask_registers (&frame->mask, mips16e_a0_a3_regs,
+                                  ARRAY_SIZE (mips16e_a0_a3_regs), &frame->num_gp);
+        }
 
-  /* Move above the FPR save area.  */
-  if (frame->num_fp > 0)
-    {
-      offset += MIPS_STACK_ALIGN (frame->num_fp * UNITS_PER_FPREG);
-      frame->fp_sp_offset = offset - UNITS_PER_HWFPVALUE;
-    }
+      /* Move above the GPR save area.  */
+      if (frame->num_gp > 0)
+        {
+          offset += MIPS_STACK_ALIGN (frame->num_gp * UNITS_PER_WORD);
+          frame->gp_sp_offset = offset - UNITS_PER_WORD;
+        }
 
-  /* Add in space for the interrupt context information.  */
-  if (cfun->machine->interrupt_handler_p)
-    {
-      /* Check HI/LO.  */
-      if (mips_save_reg_p (LO_REGNUM) || mips_save_reg_p (HI_REGNUM))
-	{
-	  frame->num_acc++;
-	  frame->acc_mask |= (1 << 0);
-	}
+      /* Find out which FPRs we need to save.  This loop must iterate over
+         the same space as its companion in mips_for_each_saved_gpr_and_fpr.  */
+      if (TARGET_HARD_FLOAT)
+        for (regno = FP_REG_FIRST; regno <= FP_REG_LAST; regno += MAX_FPRS_PER_FMT)
+          if (mips_save_reg_p (regno))
+            {
+              frame->num_fp += MAX_FPRS_PER_FMT;
+              frame->fmask |= ~(~0U << MAX_FPRS_PER_FMT) << (regno - FP_REG_FIRST);
+            }
 
-      /* Check accumulators 1, 2, 3.  */
-      for (i = DSP_ACC_REG_FIRST; i <= DSP_ACC_REG_LAST; i += 2)
-	if (mips_save_reg_p (i) || mips_save_reg_p (i + 1))
-	  {
-	    frame->num_acc++;
-	    frame->acc_mask |= 1 << (((i - DSP_ACC_REG_FIRST) / 2) + 1);
-	  }
+      /* Move above the FPR save area.  */
+      if (frame->num_fp > 0)
+        {
+          offset += MIPS_STACK_ALIGN (frame->num_fp * UNITS_PER_FPREG);
+          frame->fp_sp_offset = offset - UNITS_PER_HWFPVALUE;
+        }
 
-      /* All interrupt context functions need space to preserve STATUS.  */
-      frame->num_cop0_regs++;
+      /* Add in space for the interrupt context information.  */
+      if (cfun->machine->interrupt_handler_p)
+        {
+          /* Check HI/LO.  */
+          if (mips_save_reg_p (LO_REGNUM) || mips_save_reg_p (HI_REGNUM))
+            {
+              frame->num_acc++;
+              frame->acc_mask |= (1 << 0);
+            }
 
-      /* We need to save EPC regardless of whether interrupts remain masked
-	 as exceptions will corrupt EPC.  */
-      frame->num_cop0_regs++;
-    }
+          /* Check accumulators 1, 2, 3.  */
+          for (i = DSP_ACC_REG_FIRST; i <= DSP_ACC_REG_LAST; i += 2)
+            if (mips_save_reg_p (i) || mips_save_reg_p (i + 1))
+              {
+                frame->num_acc++;
+                frame->acc_mask |= 1 << (((i - DSP_ACC_REG_FIRST) / 2) + 1);
+              }
 
-  /* Move above the accumulator save area.  */
-  if (frame->num_acc > 0)
-    {
-      /* Each accumulator needs 2 words.  */
-      offset += frame->num_acc * 2 * UNITS_PER_WORD;
-      frame->acc_sp_offset = offset - UNITS_PER_WORD;
-    }
+          /* All interrupt context functions need space to preserve STATUS.  */
+          frame->num_cop0_regs++;
 
-  /* Move above the COP0 register save area.  */
-  if (frame->num_cop0_regs > 0)
-    {
-      offset += frame->num_cop0_regs * UNITS_PER_WORD;
-      frame->cop0_sp_offset = offset - UNITS_PER_WORD;
+          /* We need to save EPC regardless of whether interrupts remain masked
+             as exceptions will corrupt EPC.  */
+          frame->num_cop0_regs++;
+        }
+
+      /* Move above the accumulator save area.  */
+      if (frame->num_acc > 0)
+        {
+          /* Each accumulator needs 2 words.  */
+          offset += frame->num_acc * 2 * UNITS_PER_WORD;
+          frame->acc_sp_offset = offset - UNITS_PER_WORD;
+        }
+
+      /* Move above the COP0 register save area.  */
+      if (frame->num_cop0_regs > 0)
+        {
+          offset += frame->num_cop0_regs * UNITS_PER_WORD;
+          frame->cop0_sp_offset = offset - UNITS_PER_WORD;
+        }
     }
 
   /* Determine if we can save the callee-saved registers in the frame
@@ -11715,6 +11783,22 @@ static bool
 mips_can_eliminate (const int from ATTRIBUTE_UNUSED, const int to)
 {
   return (to == HARD_FRAME_POINTER_REGNUM || to == STACK_POINTER_REGNUM);
+}
+
+static bool
+mips_allocate_stack_slots_for_args (void)
+{
+  return (cfun && cfun->machine && !cfun->machine->is_naked)
+  || (current_function_decl != NULL_TREE && mips_naked_type_p (current_function_decl));
+}
+
+static bool
+mips_warn_func_return (tree decl)
+{
+  /* Naked functions are implemented entirely in assembly, including the
+     return sequence, so suppress warnings about this.  */
+
+  return !mips_naked_type_p (decl);
 }
 
 /* Implement INITIAL_ELIMINATION_OFFSET.  FROM is either the frame pointer
@@ -12634,41 +12718,46 @@ mips_expand_prologue (void)
   HOST_WIDE_INT size;
   unsigned int nargs;
 
-  if (cfun->machine->global_pointer != INVALID_REGNUM)
-    {
-      /* Check whether an insn uses pic_offset_table_rtx, either explicitly
-	 or implicitly.  If so, we can commit to using a global pointer
-	 straight away, otherwise we need to defer the decision.  */
-      if (mips_cfun_has_inflexible_gp_ref_p ()
-	  || mips_cfun_has_flexible_gp_ref_p ())
-	{
-	  cfun->machine->must_initialize_gp_p = true;
-	  cfun->machine->must_restore_gp_when_clobbered_p = true;
-	}
-
-      SET_REGNO (pic_offset_table_rtx, cfun->machine->global_pointer);
-    }
-
   frame = &cfun->machine->frame;
   size = frame->total_size;
 
   if (flag_stack_usage_info)
     current_function_static_stack_size = size;
 
-  if (flag_stack_check == STATIC_BUILTIN_STACK_CHECK
-      || flag_stack_clash_protection)
+  /* Prologue: naked.  */
+  if (!cfun->machine->is_naked)
     {
-      if (crtl->is_leaf && !cfun->calls_alloca)
-	{
-	  if (size > PROBE_INTERVAL && size > get_stack_check_protect ())
-	    mips_emit_probe_stack_range (get_stack_check_protect (),
-					 size - get_stack_check_protect ());
-	}
-      else if (size > 0)
-	mips_emit_probe_stack_range (get_stack_check_protect (), size);
-    }
 
-  mips_emit_4300_stack_cache_op (size, 3, AT_REGNUM);
+      if (cfun->machine->global_pointer != INVALID_REGNUM)
+        {
+          /* Check whether an insn uses pic_offset_table_rtx, either explicitly
+             or implicitly.  If so, we can commit to using a global pointer
+             straight away, otherwise we need to defer the decision.  */
+          if (mips_cfun_has_inflexible_gp_ref_p ()
+              || mips_cfun_has_flexible_gp_ref_p ())
+            {
+              cfun->machine->must_initialize_gp_p = true;
+              cfun->machine->must_restore_gp_when_clobbered_p = true;
+            }
+
+          SET_REGNO (pic_offset_table_rtx, cfun->machine->global_pointer);
+        }
+
+      if (flag_stack_check == STATIC_BUILTIN_STACK_CHECK
+          || flag_stack_clash_protection)
+        {
+          if (crtl->is_leaf && !cfun->calls_alloca)
+            {
+              if (size > PROBE_INTERVAL && size > get_stack_check_protect ())
+                mips_emit_probe_stack_range (get_stack_check_protect (),
+                                             size - get_stack_check_protect ());
+            }
+          else if (size > 0)
+            mips_emit_probe_stack_range (get_stack_check_protect (), size);
+        }
+
+      mips_emit_4300_stack_cache_op (size, 3, AT_REGNUM);
+    }
 
   /* Save the registers.  Allocate up to MIPS_MAX_FIRST_STACK_STEP
      bytes beforehand; this is enough to cover the register save area
@@ -12870,6 +12959,9 @@ mips_expand_prologue (void)
 	}
       mips_frame_barrier ();
     }
+
+  if (cfun->machine->is_naked)
+    return;
 
   /* Set up the frame pointer, if we're using one.  */
   if (frame_pointer_needed)
@@ -13120,6 +13212,14 @@ mips_expand_epilogue (bool sibcall_p)
       adjust = MIPS_EPILOGUE_TEMP (Pmode);
     }
   mips_deallocate_stack (base, adjust, step2);
+
+  /* epilogue: naked  */
+  if (cfun->machine->is_naked)
+    {
+      if (!sibcall_p)
+        emit_jump_insn (gen_return ());
+      return;
+    }
 
   /* If we're using addressing macros, $gp is implicitly used by all
      SYMBOL_REFs.  We must emit a blockage insn before restoring $gp
@@ -20386,8 +20486,17 @@ mips_set_current_function (tree fndecl)
 {
   enum mips_code_readable_setting old_code_readable = mips_code_readable;
 
-  mips_set_compression_mode (mips_get_compress_mode (fndecl));
+  if (fndecl != NULL_TREE
+      && current_function_decl != NULL_TREE
+      && current_function_decl != error_mark_node
+      && cfun->machine
+      && !cfun->machine->attributes_checked_p)
+    {
+      cfun->machine->is_naked = mips_naked_type_p (fndecl);
+      cfun->machine->attributes_checked_p = 1;
+    }
 
+  mips_set_compression_mode (mips_get_compress_mode (fndecl));
   mips_code_readable = mips_get_code_readable_attr (fndecl);
 
   /* Since the mips_code_readable setting has potentially changed, the
@@ -23505,6 +23614,9 @@ mips_bit_clear_p (enum machine_mode mode, unsigned HOST_WIDE_INT m)
 #define TARGET_SMALL_REGISTER_CLASSES_FOR_MODE_P \
   mips_small_register_classes_for_mode_p
 
+#undef  TARGET_CANNOT_MODIFY_JUMPS_P
+#define TARGET_CANNOT_MODIFY_JUMPS_P mips_cannot_modify_jumps_p
+
 #undef TARGET_FUNCTION_OK_FOR_SIBCALL
 #define TARGET_FUNCTION_OK_FOR_SIBCALL mips_function_ok_for_sibcall
 
@@ -23688,6 +23800,12 @@ mips_bit_clear_p (enum machine_mode mode, unsigned HOST_WIDE_INT m)
 
 #undef TARGET_CAN_ELIMINATE
 #define TARGET_CAN_ELIMINATE mips_can_eliminate
+
+#undef TARGET_ALLOCATE_STACK_SLOTS_FOR_ARGS
+#define TARGET_ALLOCATE_STACK_SLOTS_FOR_ARGS mips_allocate_stack_slots_for_args
+
+#undef TARGET_WARN_FUNC_RETURN
+#define TARGET_WARN_FUNC_RETURN mips_warn_func_return
 
 #undef TARGET_CONDITIONAL_REGISTER_USAGE
 #define TARGET_CONDITIONAL_REGISTER_USAGE mips_conditional_register_usage

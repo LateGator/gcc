@@ -3424,6 +3424,13 @@ struct GTY(())  machine_function {
 
   /* True if the function should generate hazard barrier return.  */
   bool use_hazard_barrier_return_p;
+
+  /* 'true' - if current function is a naked function.  */
+  bool is_naked;
+
+  /* 'true' if the above is_foo predicates are sanity-checked to avoid
+     multiple diagnose for the same function.  */
+  bool attributes_checked_p;
 };
 #endif
 
