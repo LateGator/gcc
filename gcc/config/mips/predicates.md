@@ -399,6 +399,24 @@
   return !LUI_INT (op) && !SMALL_INT (op) && !SMALL_INT_UNSIGNED (op);
 })
 
+;; A legitimate CONST_INT operand that takes more than one instruction
+;; to load.
+(define_predicate "splittable_const_double_operand"
+  (match_code "const_double")
+{
+  /* When generating mips16 code, TARGET_LEGITIMATE_CONSTANT_P rejects
+     CONST_INTs that can't be loaded using simple insns.  */
+  if (TARGET_MIPS16 && !TARGET_MIPS16E2)
+    return false;
+
+  /* Don't handle multi-word moves this way; we don't want to introduce
+     the individual word-mode moves until after reload.  */
+  if (GET_MODE_SIZE (mode) > UNITS_PER_WORD)
+    return false;
+
+  return true;
+})
+
 (define_predicate "move_operand"
   ;; Allow HI and LO to be used as the source of a MIPS16 move.
   (ior (match_operand 0 "general_operand")
@@ -442,6 +460,8 @@
     {
     case CONST_INT:
       return !splittable_const_int_operand (op, mode);
+    case CONST_DOUBLE:
+      return !splittable_const_double_operand (op, mode);
 
     case CONST:
     case SYMBOL_REF:

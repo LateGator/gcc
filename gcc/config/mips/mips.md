@@ -4829,6 +4829,30 @@
   DONE;
 })
 
+(define_split
+  [(set (match_operand:SCALARF 0 "register_operand")
+	(match_operand:SCALARF 1 "splittable_const_double_operand"))
+   (clobber (match_operand:GPR 2 "register_operand"))]
+  ""
+  [(const_int 0)]
+{
+  if (GET_MODE (operands[0]) == SFmode)
+    {
+      long l;
+      REAL_VALUE_TO_TARGET_SINGLE (*CONST_DOUBLE_REAL_VALUE (operands[1]), l);
+      mips_move_integer (operands[2], operands[2], l);
+    }
+  else
+    {
+      long l[2];
+      REAL_VALUE_TO_TARGET_DOUBLE (*CONST_DOUBLE_REAL_VALUE (operands[1]), l);
+      mips_move_integer (operands[2], operands[2], l[0] | (((HOST_WIDE_INT) l[1]) << 32));
+    }
+
+  mips_emit_move (operands[0], gen_rtx_SUBREG (GET_MODE (operands[0]), operands[2], 0));
+  DONE;
+})
+
 ;; Likewise, for symbolic operands.
 (define_split
   [(set (match_operand:P 0 "register_operand")
@@ -5282,6 +5306,24 @@
   [(set_attr "move_type" "move,move,move,load,store")
    (set_attr "mode" "SF")])
 
+(define_insn_and_split "*movsf_hardfloat_imm"
+  [(set (match_operand:SF 0 "nonimmediate_operand" "=f,m")
+	(match_operand:SF 1 "move_operand" "F,F"))
+   (clobber (match_operand:SF 2 "register_operand" "=d,d"))]
+  "TARGET_HARD_FLOAT"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  long l;
+  REAL_VALUE_TO_TARGET_SINGLE (*CONST_DOUBLE_REAL_VALUE (operands[1]), l);
+  mips_move_integer (operands[2], operands[2], l);
+  mips_emit_move (operands[0], gen_rtx_SUBREG (SFmode, operands[2], 0));
+  DONE;
+}
+  [(set_attr "move_type" "mtc,store")
+   (set_attr "mode" "SF")])
+
 ;; 64-bit floating point moves
 
 (define_expand "movdf"
@@ -5321,6 +5363,25 @@
        || register_operand (operands[1], DFmode))"
   { return mips_output_move (operands[0], operands[1]); }
   [(set_attr "move_type" "move,move,move,load,store")
+   (set_attr "mode" "DF")])
+
+(define_insn_and_split "*movdf_hardfloat_imm"
+  [(set (match_operand:DF 0 "nonimmediate_operand" "=f,m")
+	(match_operand:DF 1 "move_operand" "F,F"))
+   (clobber (match_operand:DF 2 "register_operand" "=d,d"))]
+  "TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT && TARGET_64BIT"
+  "#"
+  "&& 1"
+  [(const_int 0)]
+{
+  long l[2];
+
+  REAL_VALUE_TO_TARGET_DOUBLE (*CONST_DOUBLE_REAL_VALUE (operands[1]), l);
+  mips_move_integer (operands[2], operands[2], l[0] | (((HOST_WIDE_INT) l[1]) << 32));
+  mips_emit_move (operands[0], gen_rtx_SUBREG (DFmode, operands[2], 0));
+  DONE;
+}
+  [(set_attr "move_type" "mtc,store")
    (set_attr "mode" "DF")])
 
 ;; 128-bit integer moves

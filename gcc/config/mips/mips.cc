@@ -1841,7 +1841,23 @@ mips_build_integer (struct mips_integer_op *codes,
 static bool
 mips_legitimate_constant_p (machine_mode mode ATTRIBUTE_UNUSED, rtx x)
 {
-  return mips_const_insns (x) > 0;
+  int insns;
+
+  insns = mips_const_insns (x);
+  if (insns <= 0)
+    return false;
+
+  switch (GET_CODE (x))
+    {
+    case CONST_INT:
+      return insns <= mips_max_constant_insns;
+    case CONST_DOUBLE:
+      if (mode == DFmode && !TARGET_64BIT)
+	return false;
+      return insns <= mips_max_float_constant_insns;
+    default:
+      return true;
+    }
 }
 
 /* Return a SYMBOL_REF for a MIPS16 function called NAME.  */
@@ -2612,7 +2628,7 @@ mips_cannot_force_const_mem (machine_mode mode, rtx x)
      references, reload will consider forcing C into memory and using
      one of the instruction's memory alternatives.  Returning false
      here will force it to use an input reload instead.  */
-  if ((CONST_INT_P (x) || GET_CODE (x) == CONST_VECTOR)
+  if ((CONST_INT_P (x) || CONST_DOUBLE_P (x) || GET_CODE (x) == CONST_VECTOR)
       && mips_legitimate_constant_p (mode, x))
     return true;
 
@@ -3097,8 +3113,26 @@ mips_const_insns (rtx x)
 	return 1;
       /* Fall through.  */
     case CONST_DOUBLE:
+      if (TARGET_MIPS16)
+	return 0;
       /* Allow zeros for normal mode, where we can use $0.  */
-      return !TARGET_MIPS16 && x == CONST0_RTX (GET_MODE (x)) ? 1 : 0;
+      if (x == CONST0_RTX (GET_MODE (x)))
+	return 1;
+
+      if (GET_MODE (x) == SFmode)
+	{
+	  long l;
+	  REAL_VALUE_TO_TARGET_SINGLE (*CONST_DOUBLE_REAL_VALUE (x), l);
+	  return mips_build_integer (codes, l) + 1;
+	}
+      else
+	{
+	  long l[2];
+	  REAL_VALUE_TO_TARGET_DOUBLE (*CONST_DOUBLE_REAL_VALUE (x), l);
+	  return mips_build_integer (codes, l[0] | (((HOST_WIDE_INT) l[1]) << 32)) + 1;
+	}
+
+      return 0;
 
     case CONST:
       if (CONST_GP_P (x))
@@ -3898,6 +3932,30 @@ mips_legitimize_const_move (machine_mode mode, rtx dest, rtx src)
   if (splittable_const_int_operand (src, mode))
     {
       mips_move_integer (dest, dest, INTVAL (src));
+      return;
+    }
+  if (splittable_const_double_operand (src, mode))
+    {
+      rtx tmp;
+
+      tmp = gen_reg_rtx (int_mode_for_size (GET_MODE_BITSIZE (mode), 0).else_blk());
+
+      if (mode == SFmode)
+	{
+	  long l;
+
+	  REAL_VALUE_TO_TARGET_SINGLE (*CONST_DOUBLE_REAL_VALUE (src), l);
+	  mips_move_integer (tmp, tmp, l);
+	}
+      else
+	{
+	  long l[2];
+
+	  REAL_VALUE_TO_TARGET_DOUBLE (*CONST_DOUBLE_REAL_VALUE (src), l);
+	  mips_move_integer (tmp, tmp, l[0] | (((HOST_WIDE_INT) l[1]) << 32));
+	}
+
+      emit_move_insn (dest, gen_rtx_SUBREG (mode, tmp , 0));
       return;
     }
 
@@ -20747,6 +20805,9 @@ mips_option_override (void)
 	       mips_dcache_size_arg);
       mips_dcache_size = 1 << mips_dcache_size_arg;
   }
+
+  if (!mips_max_constant_insns)
+    mips_max_constant_insns = CONSTANT_POOL_COST;
 
   /* -fsanitize=address needs to turn on -fasynchronous-unwind-tables in
      order for tracebacks to be complete but not if any

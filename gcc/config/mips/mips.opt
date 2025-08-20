@@ -226,6 +226,14 @@ mdcache-size=
 Target RejectNegative Joined UInteger Var(mips_dcache_size_arg)
 Sets the maximum cache size as a power of two for flushing stack memory with -mclear-stack-dcache.
 
+mmax-constant-insns=
+Target RejectNegative Joined UInteger Var(mips_max_constant_insns) Init(0)
+Maximum number of instructions to use for loading constant values inline.
+
+mmax-float-constant-insns=
+Target RejectNegative Joined UInteger Var(mips_max_float_constant_insns) Init(0)
+Maximum number of instructions to use for loading floating point constant values inline.
+
 mfp-exceptions
 Target Var(TARGET_FP_EXCEPTIONS) Init(1)
 FP exceptions are enabled.
