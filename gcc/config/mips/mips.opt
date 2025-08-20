@@ -74,6 +74,10 @@ mbranch-likely
 Target Mask(BRANCHLIKELY)
 Use Branch Likely instructions, overriding the architecture default.
 
+mpreferred-stack-boundary=
+Target RejectNegative Joined UInteger Var(mips_preferred_stack_boundary_arg)
+Attempt to keep stack aligned to this power of 2.
+
 mflip-mips16
 Target Var(TARGET_FLIP_MIPS16)
 Switch on/off MIPS16 ASE on alternating functions for compiler testing.

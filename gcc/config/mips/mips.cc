@@ -498,6 +498,9 @@ static int mips_base_target_flags;
 /* The default compression mode.  */
 unsigned int mips_base_compression_flags;
 
+/* Stack alignment to assume/maintain.  */
+unsigned mips_stack_boundary;
+
 /* The default code readable setting.  */
 enum mips_code_readable_setting mips_base_code_readable;
 
@@ -6489,8 +6492,8 @@ mips_function_arg_boundary (machine_mode mode, const_tree type)
 
   if (alignment < PARM_BOUNDARY)
     alignment = PARM_BOUNDARY;
-  if (alignment > STACK_BOUNDARY)
-    alignment = STACK_BOUNDARY;
+  if (alignment > PREFERRED_STACK_BOUNDARY)
+    alignment = PREFERRED_STACK_BOUNDARY;
   return alignment;
 }
 
@@ -20547,6 +20550,20 @@ mips_option_override (void)
 	target_flags &= ~MASK_64BIT;
       else
 	target_flags |= MASK_64BIT;
+    }
+
+  /* Validate -mpreferred-stack-boundary= value.  */
+  mips_stack_boundary = STACK_BOUNDARY;
+  if (mips_preferred_stack_boundary_arg)
+    {
+      int min = ctz_hwi (STACK_BOUNDARY / 8);
+      int max = 8;
+
+      if (!IN_RANGE (mips_preferred_stack_boundary_arg, min, max))
+	error ("%<-mpreferred-stack-boundary=%d%> must be between %d and %d",
+	       mips_preferred_stack_boundary_arg, min, max);
+
+      mips_stack_boundary = 8 << mips_preferred_stack_boundary_arg;
     }
 
   /* -fsanitize=address needs to turn on -fasynchronous-unwind-tables in

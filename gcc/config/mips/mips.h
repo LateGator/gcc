@@ -2445,6 +2445,7 @@ enum reg_class
 #define OUTGOING_REG_PARM_STACK_SPACE(FNTYPE) 1
 
 #define STACK_BOUNDARY (TARGET_NEWABI ? 128 : 64)
+#define PREFERRED_STACK_BOUNDARY mips_stack_boundary
 
 /* Symbolic macros for the registers used to return integer and floating
    point values.  */
@@ -2570,8 +2571,7 @@ typedef struct mips_args {
 
 /* Treat LOC as a byte offset from the stack pointer and round it up
    to the next fully-aligned offset.  */
-#define MIPS_STACK_ALIGN(LOC) \
-  (TARGET_NEWABI ? ROUND_UP ((LOC), 16) : ROUND_UP ((LOC), 8))
+#define MIPS_STACK_ALIGN(LOC) (ROUND_UP ((LOC), PREFERRED_STACK_BOUNDARY>>3))
 
 
 /* Output assembler code to FILE to increment profiler label # LABELNO
@@ -3257,6 +3257,7 @@ extern int mips_isa_rev;
 extern const struct mips_cpu_info *mips_arch_info;
 extern const struct mips_cpu_info *mips_tune_info;
 extern unsigned int mips_base_compression_flags;
+extern unsigned mips_stack_boundary;
 extern GTY(()) struct target_globals *mips16_globals;
 extern GTY(()) struct target_globals *micromips_globals;
 

@@ -27,6 +27,9 @@ UrlSuffix(gcc/MIPS-Options.html#index-mbranch-cost-3)
 mbranch-likely
 UrlSuffix(gcc/MIPS-Options.html#index-mbranch-likely)
 
+mpreferred-stack-boundary=
+UrlSuffix(gcc/MIPS-Options.html#index-mpreferred-stack-boundary)
+
 mflip-mips16
 UrlSuffix(gcc/MIPS-Options.html#index-mflip-mips16)
 
