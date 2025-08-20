@@ -958,7 +958,17 @@ static const struct mips_rtx_cost_data
 		     4            /* memory_latency */
   },
   { /* R4300 */
-    DEFAULT_COSTS
+    COSTS_N_INSNS (3),            /* fp_add */
+    COSTS_N_INSNS (5),            /* fp_mult_sf */
+    COSTS_N_INSNS (8),            /* fp_mult_df */
+    COSTS_N_INSNS (29),           /* fp_div_sf */
+    COSTS_N_INSNS (58),           /* fp_div_df */
+    COSTS_N_INSNS (5),            /* int_mult_si */
+    COSTS_N_INSNS (8),            /* int_mult_di */
+    COSTS_N_INSNS (37),           /* int_div_si */
+    COSTS_N_INSNS (69),           /* int_div_di */
+		     1,           /* branch_cost */
+		     4            /* memory_latency */
   },
   { /* R4600 */
     DEFAULT_COSTS
