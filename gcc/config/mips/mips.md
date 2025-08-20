@@ -3155,7 +3155,21 @@
 ;;  ...................
 ;;
 
-(define_insn "clz<mode>2"
+(define_expand "clz<mode>2"
+  [(set (match_operand:GPR 0 "register_operand" "=d")
+	(clz:GPR (match_operand:GPR 1 "register_operand" "d")))]
+  "ISA_HAS_CLZ_CLO || (TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT && TARGET_64BIT)"
+{
+  if (!ISA_HAS_CLZ_CLO)
+    {
+      emit_insn (gen_clz<mode>2_macro (operands[0], operands[1]));
+      DONE;
+    }
+}
+  [(set_attr "type" "clz")
+   (set_attr "mode" "<MODE>")])
+
+(define_insn "clz<mode>2_insn"
   [(set (match_operand:GPR 0 "register_operand" "=d")
 	(clz:GPR (match_operand:GPR 1 "register_operand" "d")))]
   "ISA_HAS_CLZ_CLO"
@@ -3163,14 +3177,107 @@
   [(set_attr "type" "clz")
    (set_attr "mode" "<MODE>")])
 
-
-(define_insn "*clo<mode>2"
+(define_insn "*clo<mode>2_insn"
   [(set (match_operand:GPR 0 "register_operand" "=d")
 	(clz:GPR (not:GPR (match_operand:GPR 1 "register_operand" "d"))))]
   "ISA_HAS_CLZ_CLO"
   "<d>clo\t%0,%1"
   [(set_attr "type" "clz")
    (set_attr "mode" "<MODE>")])
+
+(define_expand "clzsi2_macro"
+  [(set (match_operand:SI 0 "register_operand" "=d")
+	(clz:SI (match_operand:SI 1 "register_operand" "d")))]
+  "!ISA_HAS_CLZ_CLO && TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT && TARGET_64BIT"
+{
+  rtx reg1 = gen_reg_rtx (DFmode);
+  rtx reg2 = gen_reg_rtx (DImode);
+  rtx reg3 = gen_reg_rtx (SImode);
+  rtx_code_label *label1 = gen_label_rtx ();
+  rtx_code_label *label2 = gen_label_rtx ();
+  rtx_code_label *label3 = gen_label_rtx ();
+
+  if (reg1)
+    {
+      rtx tmp;
+
+      tmp = gen_rtx_NE (VOIDmode, operands[1], GEN_INT (0));
+      tmp = emit_jump_insn (gen_condjump (tmp, label1));
+      JUMP_LABEL (tmp) = label1;
+      mips_emit_move (operands[0], GEN_INT (32));
+      tmp = emit_jump_insn (gen_jump (label3));
+      JUMP_LABEL (tmp) = label3;
+      emit_barrier ();
+
+      emit_label (label1);
+      tmp = gen_rtx_GT (VOIDmode, operands[1], GEN_INT (0));
+      tmp = emit_jump_insn (gen_condjump (tmp, label2));
+      JUMP_LABEL (tmp) = label2;
+      mips_emit_move (operands[0], GEN_INT (0));
+      tmp = emit_jump_insn (gen_jump (label3));
+      JUMP_LABEL (tmp) = label3;
+      emit_barrier ();
+
+      emit_label (label2);
+      emit_insn (gen_floatsidf2 (reg1, operands[1]));
+      mips_emit_move (reg2, gen_rtx_SUBREG (DImode, reg1, 0));
+      mips_emit_move (reg2, gen_rtx_LSHIFTRT (DImode, reg2, GEN_INT (52)));
+      emit_insn (gen_truncdisi2 (operands[0], reg2));
+      mips_emit_move (reg3, GEN_INT (0x3ff + 31));
+      mips_emit_move (operands[0], gen_rtx_MINUS (SImode, reg3, operands[0]));
+      emit_label (label3);
+      DONE;
+    }
+})
+
+(define_expand "clzdi2_macro"
+  [(set (match_operand:DI 0 "register_operand" "=d")
+	(clz:DI (match_operand:DI 1 "register_operand" "d")))]
+  "!ISA_HAS_CLZ_CLO && TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT && TARGET_64BIT"
+{
+  rtx reg1 = gen_reg_rtx (DFmode);
+  rtx reg3 = gen_reg_rtx (DImode);
+  rtx reg4 = gen_reg_rtx (DImode);
+  rtx_code_label *label1 = gen_label_rtx ();
+  rtx_code_label *label2 = gen_label_rtx ();
+  rtx_code_label *label3 = gen_label_rtx ();
+  rtx_code_label *label4 = gen_label_rtx ();
+
+  if (reg1)
+    {
+      rtx tmp;
+
+      tmp = gen_rtx_NE (VOIDmode, operands[1], GEN_INT (0));
+      tmp = emit_jump_insn (gen_condjump (tmp, label1));
+      JUMP_LABEL (tmp) = label1;
+      mips_emit_move (operands[0], GEN_INT (64));
+      tmp = emit_jump_insn (gen_jump (label4));
+      JUMP_LABEL (tmp) = label4;
+      emit_barrier ();
+
+      emit_label (label1);
+      mips_emit_move (reg3, gen_rtx_LSHIFTRT (DImode, operands[1], GEN_INT (32)));
+      tmp = gen_rtx_NE (VOIDmode, reg3, const0_rtx);
+      tmp = emit_jump_insn (gen_condjump (tmp, label2));
+      JUMP_LABEL (tmp) = label2;
+      mips_emit_move (reg4, GEN_INT (0x3ff + 31));
+      mips_emit_move (reg3, operands[1]);
+      tmp = emit_jump_insn (gen_jump (label3));
+      JUMP_LABEL (tmp) = label3;
+      emit_barrier ();
+
+      emit_label (label2);
+      mips_emit_move (reg4, GEN_INT (0x3ff + 31 + 32));
+
+      emit_label (label3);
+      emit_insn (gen_floatdidf2 (reg1, reg3));
+      mips_emit_move (reg3, gen_rtx_SUBREG (DImode, reg1, 0));
+      mips_emit_move (reg3, gen_rtx_LSHIFTRT (DImode, reg3, GEN_INT (52)));
+      mips_emit_move (operands[0], gen_rtx_MINUS (DImode, reg4, reg3));
+      emit_label (label4);
+      DONE;
+    }
+})
 
 ;;
 ;;  ...................
@@ -3180,13 +3287,224 @@
 ;;  ...................
 ;;
 
-(define_insn "ctz<mode>2"
+
+(define_expand "ctz<mode>2"
+  [(set (match_operand:GPR 0 "register_operand" "=d")
+	(ctz:GPR (match_operand:GPR 1 "register_operand" "d")))]
+  "ISA_HAS_CTZ_CTO || (TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT && TARGET_64BIT)"
+{
+  if (!ISA_HAS_CTZ_CTO)
+    {
+      emit_insn (gen_ctz<mode>2_macro (operands[0], operands[1]));
+      DONE;
+    }
+}
+  [(set_attr "type" "clz")
+   (set_attr "mode" "<MODE>")])
+
+(define_insn "ctz<mode>2_insn"
   [(set (match_operand:GPR 0 "register_operand" "=d")
 	(ctz:GPR (match_operand:GPR 1 "register_operand" "d")))]
   "ISA_HAS_CTZ_CTO"
   "<d>ctz\t%0,%1"
   [(set_attr "type" "clz")
    (set_attr "mode" "<MODE>")])
+
+(define_expand "ctzsi2_macro"
+  [(set (match_operand:SI 0 "register_operand" "=d")
+	(ctz:SI (match_operand:SI 1 "register_operand" "d")))]
+  "!ISA_HAS_CTZ_CTO && TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT && TARGET_64BIT"
+{
+  rtx reg1 = gen_reg_rtx (DFmode);
+  rtx reg2 = gen_reg_rtx (DImode);
+  rtx reg3 = gen_reg_rtx (SImode);
+  rtx_code_label *label1 = gen_label_rtx ();
+  rtx_code_label *label2 = gen_label_rtx ();
+  rtx_code_label *label3 = gen_label_rtx ();
+
+  if (reg1)
+    {
+      rtx tmp;
+
+      tmp = gen_rtx_NE (VOIDmode, operands[1], GEN_INT (0));
+      tmp = emit_jump_insn (gen_condjump (tmp, label1));
+      JUMP_LABEL (tmp) = label1;
+      mips_emit_move (operands[0], GEN_INT (32));
+      tmp = emit_jump_insn (gen_jump (label3));
+      JUMP_LABEL (tmp) = label3;
+      emit_barrier ();
+
+      emit_label (label1);
+      mips_emit_move (reg3, gen_rtx_NEG (SImode, operands[1]));
+      mips_emit_move (reg3, gen_rtx_AND (SImode, reg3, operands[1]));
+      tmp = gen_rtx_GT (VOIDmode, reg3, GEN_INT (0));
+      tmp = emit_jump_insn (gen_condjump (tmp, label2));
+      JUMP_LABEL (tmp) = label2;
+      mips_emit_move (operands[0], GEN_INT (31));
+      tmp = emit_jump_insn (gen_jump (label3));
+      JUMP_LABEL (tmp) = label3;
+      emit_barrier ();
+
+      emit_label (label2);
+      emit_insn (gen_floatsidf2 (reg1, reg3));
+      mips_emit_move (reg2, gen_rtx_SUBREG (DImode, reg1, 0));
+      mips_emit_move (reg2, gen_rtx_LSHIFTRT (DImode, reg2, GEN_INT (52)));
+      emit_insn (gen_truncdisi2 (operands[0], reg2));
+      mips_emit_move (operands[0], gen_rtx_PLUS (SImode, operands[0], GEN_INT (-0x3ff)));
+      emit_label (label3);
+      DONE;
+    }
+})
+
+(define_expand "ctzdi2_macro"
+  [(set (match_operand:DI 0 "register_operand" "=d")
+	(ctz:DI (match_operand:DI 1 "register_operand" "d")))]
+  "!ISA_HAS_CTZ_CTO && TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT && TARGET_64BIT"
+{
+  rtx reg1 = gen_reg_rtx (DFmode);
+  rtx reg2 = gen_reg_rtx (DImode);
+  rtx reg3 = gen_reg_rtx (DImode);
+  rtx reg4 = gen_reg_rtx (DImode);
+  rtx_code_label *label1 = gen_label_rtx ();
+  rtx_code_label *label2 = gen_label_rtx ();
+  rtx_code_label *label3 = gen_label_rtx ();
+  rtx_code_label *label4 = gen_label_rtx ();
+
+  if (reg1)
+    {
+      rtx tmp;
+
+      tmp = gen_rtx_NE (VOIDmode, operands[1], GEN_INT (0));
+      tmp = emit_jump_insn (gen_condjump (tmp, label1));
+      JUMP_LABEL (tmp) = label1;
+      mips_emit_move (operands[0], GEN_INT (64));
+      tmp = emit_jump_insn (gen_jump (label4));
+      JUMP_LABEL (tmp) = label4;
+      emit_barrier ();
+
+      emit_label (label1);
+      mips_emit_move (reg2, gen_rtx_LSHIFTRT (DImode, operands[1], GEN_INT (32)));
+      tmp = gen_rtx_NE (VOIDmode, reg2, const0_rtx);
+      tmp = emit_jump_insn (gen_condjump (tmp, label2));
+      JUMP_LABEL (tmp) = label2;
+      mips_emit_move (reg3, GEN_INT (0x3ff));
+      mips_emit_move (reg2, operands[1]);
+      tmp = emit_jump_insn (gen_jump (label3));
+      JUMP_LABEL (tmp) = label3;
+      emit_barrier ();
+
+      emit_label (label2);
+      mips_emit_move (reg3, GEN_INT (0x3ff + 32));
+
+      emit_label (label3);
+      mips_emit_move (reg4, gen_rtx_NEG (DImode, reg2));
+      mips_emit_move (reg2, gen_rtx_AND (DImode, reg2, reg4));
+      emit_insn (gen_floatdidf2 (reg1, reg2));
+      mips_emit_move (reg2, gen_rtx_SUBREG (DImode, reg1, 0));
+      mips_emit_move (reg2, gen_rtx_LSHIFTRT (DImode, reg2, GEN_INT (52)));
+      mips_emit_move (operands[0], gen_rtx_MINUS (DImode, reg2, reg3));
+      emit_label (label4);
+      DONE;
+    }
+})
+
+
+;;
+;;  ...................
+;;
+;;  Find first set.
+;;
+;;  ...................
+;;
+
+
+(define_expand "ffssi2"
+  [(set (match_operand:SI 0 "register_operand" "=d")
+	(ffs:SI (match_operand:SI 1 "register_operand" "d")))]
+  "!ISA_HAS_CTZ_CTO && TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT && TARGET_64BIT"
+{
+  rtx reg1 = gen_reg_rtx (DFmode);
+  rtx reg2 = gen_reg_rtx (DImode);
+  rtx reg3 = gen_reg_rtx (SImode);
+  rtx_code_label *label1 = gen_label_rtx ();
+  rtx_code_label *label2 = gen_label_rtx ();
+
+  if (reg1)
+    {
+      rtx tmp;
+
+      tmp = gen_rtx_NE (VOIDmode, operands[1], GEN_INT (0));
+      tmp = emit_jump_insn (gen_condjump (tmp, label1));
+      JUMP_LABEL (tmp) = label1;
+      mips_emit_move (operands[0], const0_rtx);
+      tmp = emit_jump_insn (gen_jump (label2));
+      JUMP_LABEL (tmp) = label2;
+      emit_barrier ();
+
+      emit_label (label1);
+      mips_emit_move (reg3, gen_rtx_NEG (SImode, operands[1]));
+      mips_emit_move (reg3, gen_rtx_AND (SImode, reg3, operands[1]));
+      emit_insn (gen_floatsidf2 (reg1, reg3));
+      mips_emit_move (reg2, gen_rtx_SUBREG (DImode, reg1, 0));
+      mips_emit_move (reg2, gen_rtx_LSHIFTRT (DImode, reg2, GEN_INT (52)));
+      emit_insn (gen_truncdisi2 (operands[0], reg2));
+      mips_emit_move (operands[0], gen_rtx_PLUS (SImode, operands[0], GEN_INT (-0x3fe)));
+      emit_label (label2);
+      DONE;
+    }
+})
+
+(define_expand "ffsdi2"
+  [(set (match_operand:DI 0 "register_operand" "=d")
+	(ffs:DI (match_operand:DI 1 "register_operand" "d")))]
+  "!ISA_HAS_CTZ_CTO && TARGET_HARD_FLOAT && TARGET_DOUBLE_FLOAT && TARGET_64BIT"
+{
+  rtx reg1 = gen_reg_rtx (DFmode);
+  rtx reg2 = gen_reg_rtx (DImode);
+  rtx reg3 = gen_reg_rtx (DImode);
+  rtx reg4 = gen_reg_rtx (DImode);
+  rtx_code_label *label1 = gen_label_rtx ();
+  rtx_code_label *label2 = gen_label_rtx ();
+  rtx_code_label *label3 = gen_label_rtx ();
+  rtx_code_label *label4 = gen_label_rtx ();
+
+  if (reg1)
+    {
+      rtx tmp;
+
+      tmp = gen_rtx_NE (VOIDmode, operands[1], GEN_INT (0));
+      tmp = emit_jump_insn (gen_condjump (tmp, label1));
+      JUMP_LABEL (tmp) = label1;
+      mips_emit_move (operands[0], const0_rtx);
+      tmp = emit_jump_insn (gen_jump (label4));
+      JUMP_LABEL (tmp) = label4;
+      emit_barrier ();
+
+      emit_label (label1);
+      mips_emit_move (reg2, gen_rtx_LSHIFTRT (DImode, operands[1], GEN_INT (32)));
+      tmp = gen_rtx_NE (VOIDmode, reg2, const0_rtx);
+      tmp = emit_jump_insn (gen_condjump (tmp, label2));
+      JUMP_LABEL (tmp) = label2;
+      mips_emit_move (reg3, GEN_INT (0x3fe));
+      mips_emit_move (reg2, operands[1]);
+      tmp = emit_jump_insn (gen_jump (label3));
+      JUMP_LABEL (tmp) = label3;
+      emit_barrier ();
+
+      emit_label (label2);
+      mips_emit_move (reg3, GEN_INT (0x3fe - 32));
+
+      emit_label (label3);
+      mips_emit_move (reg4, gen_rtx_NEG (DImode, reg2));
+      mips_emit_move (reg2, gen_rtx_AND (DImode, reg2, reg4));
+      emit_insn (gen_floatdidf2 (reg1, reg2));
+      mips_emit_move (reg2, gen_rtx_SUBREG (DImode, reg1, 0));
+      mips_emit_move (reg2, gen_rtx_LSHIFTRT (DImode, reg2, GEN_INT (52)));
+      mips_emit_move (operands[0], gen_rtx_MINUS (DImode, reg2, reg3));
+      emit_label (label4);
+      DONE;
+    }
+})
 
 
 ;;
