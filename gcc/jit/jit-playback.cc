@@ -3295,7 +3295,12 @@ make_fake_args (vec <char *> *argvec,
 
   ADD_ARG (ctxt_progname);
   ADD_ARG (get_path_c_file ());
+#if !defined(MIPS_ABI_DEFAULT) || MIPS_ABI_DEFAULT != ABI_EABI
   ADD_ARG ("-fPIC");
+#ifdef MIPS_ABI_DEFAULT
+  ADD_ARG ("-mabicalls");
+#endif
+#endif
 
   /* Handle int options: */
   switch (get_int_option (GCC_JIT_INT_OPTION_OPTIMIZATION_LEVEL))
