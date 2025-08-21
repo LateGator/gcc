@@ -9740,9 +9740,23 @@ static section *
 mips_select_rtx_section (machine_mode mode, rtx x,
 			 unsigned HOST_WIDE_INT align)
 {
-  /* ??? Consider using mergeable small data sections.  */
   if (mips_rtx_constant_in_small_data_p (mode))
-    return get_named_section (NULL, ".sdata", 0);
+    {
+      if (HAVE_GAS_SHF_MERGE &&
+	  flag_merge_constants &&
+	  mode != VOIDmode && mode != BLKmode)
+	{
+	  /* Use mergeable small data sections if they are supported + wanted
+	     and the size is exactly 4 or 8.  */
+	  if (GET_MODE_SIZE (mode) == 4)
+	    return get_section (".sdata.cst4", 4 | SECTION_MERGE, NULL);
+	  if (GET_MODE_SIZE (mode) == 8)
+	    return get_section (".sdata.cst8", 8 | SECTION_MERGE, NULL);
+	}
+
+      /* Otherwise, use general small data.  */
+      return get_named_section (NULL, ".sdata", 0);
+    }
 
   return default_elf_select_rtx_section (mode, x, align);
 }
