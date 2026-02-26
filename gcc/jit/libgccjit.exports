@@ -221,7 +221,7 @@ _gcc_jit_lvalue_get_alignment
 # LIBGCCJIT_ABI_25
 _gcc_jit_type_get_restrict
 
-# LIBGCCJIT_ABI_26 
+# LIBGCCJIT_ABI_26
 _gcc_jit_function_add_attribute
 _gcc_jit_function_add_string_attribute
 _gcc_jit_lvalue_add_string_attribute
@@ -233,22 +233,62 @@ _gcc_jit_context_new_sizeof
 # LIBGCCJIT_ABI_28
 _gcc_jit_context_new_alignof
 
-# LIBGCCJIT_ABI_29 
+# LIBGCCJIT_ABI_29
 _gcc_jit_global_set_readonly
 
 # LIBGCCJIT_ABI_30
 _gcc_jit_context_convert_vector
 
-# LIBGCCJIT_ABI_31 
+# LIBGCCJIT_ABI_31
 _gcc_jit_context_new_vector_access
 _gcc_jit_context_new_rvalue_vector_perm
 
-# LIBGCCJIT_ABI_32 
+# LIBGCCJIT_ABI_32
 _gcc_jit_context_get_target_builtin_function
 
-# LIBGCCJIT_ABI_33 
+# LIBGCCJIT_ABI_33
 _gcc_jit_function_new_temp
 
-# LIBGCCJIT_ABI_34 
+# LIBGCCJIT_ABI_34
 _gcc_jit_context_set_output_ident
 
+# LIBGCCJIT_ABI_35
+_gcc_jit_context_get_target_info
+_gcc_jit_target_info_release
+_gcc_jit_target_info_cpu_supports
+_gcc_jit_target_info_arch
+_gcc_jit_target_info_supports_target_dependent_type
+
+# LIBGCCJIT_ABI_36
+_gcc_jit_type_set_packed
+
+# LIBGCCJIT_ABI_37
+_gcc_jit_block_add_try_catch
+_gcc_jit_block_add_try_finally
+_gcc_jit_function_set_personality_function
+
+# LIBGCCJIT_ABI_38
+_gcc_jit_set_global_personality_function_name
+
+# LIBGCCJIT_ABI_39
+_gcc_jit_field_set_location
+_gcc_jit_function_set_location
+_gcc_jit_rvalue_set_location
+
+# LIBGCCJIT_ABI_40
+_gcc_jit_type_is_floating_point
+
+# LIBGCCJIT_ABI_41
+_gcc_jit_rvalue_set_type
+
+# LIBGCCJIT_ABI_42
+_gcc_jit_lvalue_add_attribute
+
+# LIBGCCJIT_ABI_43
+_gcc_jit_type_set_tree_addressable
+
+# LIBGCCJIT_ABI_44
+_gcc_jit_lvalue_get_name
+
+# LIBGCCJIT_ABI_45
+_gcc_jit_lvalue_set_name
