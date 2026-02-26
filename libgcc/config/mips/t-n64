@@ -1,2 +1,1 @@
-LIB2ADD_ST = $(srcdir)/config/mips/save_restore.S
-
+LIB2ADD_ST = $(srcdir)/config/mips/save-restore.S
