@@ -29,8 +29,8 @@ along with GCC; see the file COPYING3.  If not see
 	/* Infer the default float setting from -march.  */		\
 	MIPS_ARCH_FLOAT_SPEC,						\
 									\
-	/* Make -mabi=u64 or -mabi=u32 the default.  */			\
-	"%{!mabi=*:%{!march=rsp:-mabi=u64} %{march=rsp:-mabi=u32}}",	\
+	/* Make -mabi=u32 the default on SGI RSP.  */			\
+	"%{!mabi=*:%{!march=rsp:%(asm_abi_default_spec)} %{march=rsp:-mabi=u32}}",	\
 									\
 	/* Make -mlong32 -msym32 default for all ABIs except n64. */	\
 	"%{!mabi=64:%{!mabi=u64:%{!mlong*:-mlong32}}}",			\
@@ -46,4 +46,3 @@ along with GCC; see the file COPYING3.  If not see
 									\
 	/* Configuration-independent MIPS rules.  */			\
 	BASE_DRIVER_SELF_SPECS
-
