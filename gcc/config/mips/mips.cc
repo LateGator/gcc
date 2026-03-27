@@ -8966,7 +8966,7 @@ mips_expand_iround (rtx *operands,
   real_nextafter (&offset, REAL_MODE_FORMAT (mode), &dconsthalf, &dconstninf);
   mips_emit_move (reg1, const_double_from_real_value (offset, mode));
   expand_copysign (reg1, operands[1], reg2);
-  emit_insn (gen_rtx_SET (operands[1], gen_rtx_PLUS (mode, reg1, reg2)));
+  emit_insn (gen_rtx_SET (operands[1], gen_rtx_PLUS (mode, operands[1], reg2)));
   emit_insn (fn (operands[0], operands[1]));
 }
 
@@ -9005,7 +9005,7 @@ mips_expand_round (rtx *operands,
       real_nextafter (&offset, REAL_MODE_FORMAT (mode), &dconsthalf, &dconstninf);
       mips_emit_move (reg4, const_double_from_real_value (offset, mode));
       expand_copysign (reg4, operands[1], reg5);
-      emit_insn (gen_rtx_SET (operands[1], gen_rtx_PLUS (mode, reg4, reg5)));
+      emit_insn (gen_rtx_SET (operands[1], gen_rtx_PLUS (mode, operands[1], reg5)));
     }
   emit_insn (fn (reg3, operands[1]));
   emit_insn ((mode == SFmode ? gen_floatsisf2 : gen_floatdidf2)  (operands[0], reg3));
